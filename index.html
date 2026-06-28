@@ -577,6 +577,15 @@ async function loadTrackFromSupabase() {
 }
 
 // ── MARKERS ──
+function isPointVisible(pt) {
+  // A point is visible if it has no collections assigned, OR at least one published collection
+  if (!pt.collections || pt.collections.length === 0) return true;
+  return pt.collections.some(colId => {
+    const col = state.collections.find(c => c.id === colId);
+    return col && col.published;
+  });
+}
+
 function makeIcon(cls, content) {
   return L.divIcon({className:'', html:`<div class="${cls}">${content}</div>`, iconSize:[36,36], iconAnchor:[18,18]});
 }
@@ -590,6 +599,7 @@ function refreshMarkers() {
   Object.values(markers).forEach(m=>map.removeLayer(m));
   Object.keys(markers).forEach(k=>delete markers[k]);
   state.points.forEach(pt => {
+    if (!isPointVisible(pt)) return; // hide if all collections are unpublished
     const found = state.found[pt.id];
     let m;
     if (found) {
@@ -605,6 +615,7 @@ function refreshMarkers() {
 // ── NEARBY CHECK ──
 function checkNearby(lat, lng) {
   state.points.forEach(pt => {
+    if (!isPointVisible(pt)) return;
     const dist = distanceM(lat,lng,pt.lat,pt.lng);
     const r = pt.radius || DISCOVERY_DEFAULT_RADIUS;
     const m = markers[pt.id];
@@ -673,8 +684,9 @@ function closeModal() { document.getElementById('modal-overlay').classList.remov
 
 // ── SCORE ──
 function updateScore() {
-  const total=state.points.length;
-  const found=state.points.filter(p=>state.found[p.id]).length;
+  const visiblePoints=state.points.filter(isPointVisible);
+  const total=visiblePoints.length;
+  const found=visiblePoints.filter(p=>state.found[p.id]).length;
   const pct=total>0?Math.round(found/total*100):0;
   document.getElementById('score-fill').style.width=pct+'%';
   document.getElementById('score-pct').textContent=pct+'%';
@@ -683,8 +695,9 @@ function updateScore() {
 
 // ── STATS ──
 function renderStats() {
-  const total=state.points.length;
-  const found=state.points.filter(p=>state.found[p.id]).length;
+  const visiblePoints=state.points.filter(isPointVisible);
+  const total=visiblePoints.length;
+  const found=visiblePoints.filter(p=>state.found[p.id]).length;
   const pct=total>0?Math.round(found/total*100):0;
   let html=`
     <div class="stats-total">
