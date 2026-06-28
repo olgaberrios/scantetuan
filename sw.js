@@ -1,8 +1,9 @@
-const CACHE = 'scantetuan-v1';
+const CACHE = 'scantetuan-v2';
+const BASE = '/scantetuan';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
+  BASE + '/',
+  BASE + '/index.html',
+  BASE + '/manifest.json',
   'https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500&display=swap',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
@@ -21,7 +22,6 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Network first for API calls, cache first for assets
   if (e.request.url.includes('/upload-foto') || e.request.url.includes('openstreetmap')) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
   } else {
