@@ -1,4 +1,4 @@
-const CACHE = 'scantetuan-20250628';
+const CACHE = 'scantetuan-202606281658';
 const BASE = '/scantetuan';
 
 // Assets to cache (everything except index.html)
