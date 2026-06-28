@@ -135,10 +135,10 @@
   .btn-edit { background: none; border: 1px solid var(--gold-dim); color: var(--gold); font-size: 12px; padding: 4px 8px; border-radius: 3px; cursor: pointer; }
   .btn-delete { background: none; border: none; color: var(--text-dim); font-size: 16px; cursor: pointer; padding: 4px; }
   .empty-hint { text-align: center; padding: 24px; font-size: 13px; color: var(--text-dim); line-height: 1.6; }
-  .user-arrow-wrap { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .user-arrow-wrap { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .user-dot { width: 14px; height: 14px; background: #4FC3F7; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(79,195,247,0.8); position: absolute; z-index: 2; }
+  .user-arrow { position: absolute; width: 48px; height: 48px; top: 0; left: 0; transition: transform 0.3s ease; transform-origin: 24px 24px; }
   .privacy-notice { font-size: 11px; color: var(--text-dim); text-align: center; max-width: 280px; line-height: 1.6; border: 1px solid rgba(139,155,180,0.15); border-radius: 6px; padding: 10px 12px; }
-  .user-dot { width: 14px; height: 14px; background: #4FC3F7; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 8px rgba(79,195,247,0.6); position: absolute; }
-  .user-cone { position: absolute; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 16px solid rgba(79,195,247,0.55); bottom: calc(50% + 6px); left: 50%; transform: translateX(-50%); transform-origin: center calc(100% + 7px); transition: transform 0.4s ease; pointer-events: none; }
 
   /* PICKER */
   .picker-overlay { position: fixed; inset: 0; z-index: 950; display: none; flex-direction: column; background: var(--night); }
@@ -337,7 +337,7 @@ let pickerMap = null, pickerMarker = null, pickerLat = null, pickerLng = null;
 let currentPhotoUrl = null;
 let deferredInstallPrompt = null;
 let fogCanvas = null, fogCtx = null;
-const FOG_REVEAL_RADIUS = 40; // px on screen to reveal per point
+const FOG_REVEAL_RADIUS = 80; // px on screen to reveal per point
 const FOG_COLOR = 'rgba(13,15,26,0.88)';
 
 function loadState() {
@@ -357,6 +357,48 @@ async function loadDiscoveriesFromSupabase() {
     updateScore();
     refreshMarkers();
   }
+}
+
+// ── ADMIN POINTS SYNC ──
+async function syncPointsToSupabase() {
+  // Upsert all points (admin data, shared for all users)
+  for (const pt of state.points) {
+    await sb.from('points').upsert({
+      id: pt.id,
+      name: pt.name,
+      description: pt.description || '',
+      image_url: pt.imageUrl || '',
+      link: pt.link || '',
+      icon: pt.icon,
+      radius: pt.radius || 50,
+      lat: pt.lat,
+      lng: pt.lng
+    }, { onConflict: 'id' });
+  }
+}
+
+async function deletePointFromSupabase(id) {
+  await sb.from('points').delete().eq('id', id);
+}
+
+async function loadPointsFromSupabase() {
+  const { data, error } = await sb.from('points').select('*');
+  if (error || !data || !data.length) return;
+  state.points = data.map(r => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    imageUrl: r.image_url,
+    link: r.link,
+    icon: r.icon,
+    radius: r.radius,
+    lat: r.lat,
+    lng: r.lng
+  }));
+  saveState();
+  refreshMarkers();
+  updateScore();
+  renderAdminList();
 }
 loadState();
 
@@ -380,7 +422,7 @@ function installApp() {
 
 // ── SCREENS ──
 function show(id) { document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
-function showAdmin() { show('admin-screen'); renderAdminList(); }
+function showAdmin() { show('admin-screen'); loadPointsFromSupabase(); renderAdminList(); }
 function showMap() { show('map-screen'); refreshMarkers(); updateScore(); }
 function startExploring() { show('map-screen'); initMap(); }
 
@@ -393,6 +435,7 @@ function initMap() {
   initFogCanvas();
   loadTrackFromSupabase();
   loadDiscoveriesFromSupabase();
+  loadPointsFromSupabase();
 }
 
 // ── GPS ──
@@ -416,15 +459,19 @@ function startOrientation() {
 }
 function onOrientation(e) {
   let heading = null;
-  if (e.absolute && e.alpha !== null) {
-    heading = 360 - e.alpha; // convert to compass bearing
-  } else if (e.webkitCompassHeading !== undefined) {
-    heading = e.webkitCompassHeading; // iOS
+  if (e.alpha !== null && e.alpha !== undefined) {
+    if (e.absolute) {
+      heading = 360 - e.alpha;
+    } else if (e.webkitCompassHeading !== undefined) {
+      heading = e.webkitCompassHeading;
+    } else {
+      heading = 360 - e.alpha; // best guess on Android
+    }
   }
   if (heading === null) return;
   currentHeading = heading;
-  const cone = document.getElementById('user-cone');
-  if (cone) cone.style.transform = `translateX(-50%) rotate(${heading}deg)`;
+  const arrow = document.getElementById('user-arrow');
+  if (arrow) arrow.style.transform = `rotate(${heading}deg)`;
 }
 
 function onGPS(pos) {
@@ -432,7 +479,7 @@ function onGPS(pos) {
   const {latitude:lat,longitude:lng} = pos.coords;
   userPos = {lat,lng};
   if (!userMarker) {
-    const icon = L.divIcon({className:'',html:'<div class="user-dot"></div>',iconSize:[16,16],iconAnchor:[8,8]});
+    const icon = L.divIcon({className:'',html:'<div class="user-arrow-wrap"><svg class="user-arrow" id="user-arrow" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><polygon points="24,4 31,26 24,21 17,26" fill="rgba(79,195,247,0.95)" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg><div class="user-dot"></div></div>',iconSize:[48,48],iconAnchor:[24,24]});
     userMarker = L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(map);
     map.setView([lat,lng],17);
   } else { userMarker.setLatLng([lat,lng]); }
@@ -749,6 +796,7 @@ function savePoint() {
     clearForm();
   }
   saveState(); renderAdminList(); refreshMarkers(); updateScore();
+  syncPointsToSupabase();
   showToast(editingId?'✦ Punto actualizado':'✦ Punto guardado','success');
 }
 
@@ -800,6 +848,7 @@ function deletePoint(id) {
   state.points=state.points.filter(p=>p.id!==id);
   delete state.found[id];
   saveState(); renderAdminList(); refreshMarkers(); updateScore();
+  deletePointFromSupabase(id);
 }
 
 function renderAdminList() {
