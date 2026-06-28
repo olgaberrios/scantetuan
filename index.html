@@ -404,7 +404,10 @@ loadState();
 
 // ── PWA ──
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/scantetuan/sw.js?v=' + Date.now(), { scope: '/scantetuan/' }).catch(()=>{});
+  navigator.serviceWorker.register('/scantetuan/sw.js?v=' + Date.now(), { scope: '/scantetuan/' }).then(reg => {
+    // Force update check on every load
+    reg.update();
+  }).catch(()=>{});
 }
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
@@ -446,32 +449,49 @@ function startGPS() {
 }
 // ── HEADING ──
 let currentHeading = null;
+let smoothedHeading = null;
+const SMOOTH = 0.15; // 0=frozen, 1=instant — 0.15 is smooth but responsive
+
 function startOrientation() {
-  // iOS requires explicit permission
   if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
     DeviceOrientationEvent.requestPermission().then(state => {
       if (state === 'granted') window.addEventListener('deviceorientationabsolute', onOrientation, true);
     }).catch(()=>{});
   } else {
+    // Try absolute first (more accurate on Android), fall back to relative
     window.addEventListener('deviceorientationabsolute', onOrientation, true);
     window.addEventListener('deviceorientation', onOrientation, true);
   }
 }
+
 function onOrientation(e) {
+  // Skip relative events if we already have absolute ones
+  if (!e.absolute && currentHeading !== null && e.type !== 'deviceorientationabsolute') return;
+
   let heading = null;
-  if (e.alpha !== null && e.alpha !== undefined) {
-    if (e.absolute) {
-      heading = 360 - e.alpha;
-    } else if (e.webkitCompassHeading !== undefined) {
-      heading = e.webkitCompassHeading;
-    } else {
-      heading = 360 - e.alpha; // best guess on Android
-    }
+  if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
+    heading = e.webkitCompassHeading; // iOS — already correct
+  } else if (e.alpha !== null && e.alpha !== undefined) {
+    // Android: alpha is counter-clockwise from arbitrary origin when not absolute
+    // When absolute, 0=North, increases counter-clockwise → convert to clockwise
+    heading = (360 - e.alpha + 360) % 360;
   }
   if (heading === null) return;
-  currentHeading = heading;
+
+  // Smooth with exponential moving average, handling 0/360 wrap-around
+  if (smoothedHeading === null) {
+    smoothedHeading = heading;
+  } else {
+    let diff = heading - smoothedHeading;
+    // Handle wrap-around (e.g. going from 350 to 10)
+    if (diff > 180) diff -= 360;
+    if (diff < -180) diff += 360;
+    smoothedHeading = (smoothedHeading + diff * SMOOTH + 360) % 360;
+  }
+
+  currentHeading = smoothedHeading;
   const arrow = document.getElementById('user-arrow');
-  if (arrow) arrow.style.transform = `rotate(${heading}deg)`;
+  if (arrow) arrow.style.transform = `rotate(${smoothedHeading}deg)`;
 }
 
 function onGPS(pos) {
