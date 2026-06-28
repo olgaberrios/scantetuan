@@ -135,9 +135,7 @@
   .btn-edit { background: none; border: 1px solid var(--gold-dim); color: var(--gold); font-size: 12px; padding: 4px 8px; border-radius: 3px; cursor: pointer; }
   .btn-delete { background: none; border: none; color: var(--text-dim); font-size: 16px; cursor: pointer; padding: 4px; }
   .empty-hint { text-align: center; padding: 24px; font-size: 13px; color: var(--text-dim); line-height: 1.6; }
-  .user-arrow-wrap { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; position: relative; }
-  .user-dot { width: 14px; height: 14px; background: #4FC3F7; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(79,195,247,0.8); position: absolute; z-index: 2; }
-  .user-arrow { position: absolute; width: 48px; height: 48px; top: 0; left: 0; transition: transform 0.3s ease; transform-origin: 24px 24px; }
+  .user-dot { width: 16px; height: 16px; background: #4FC3F7; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(79,195,247,0.7); }
   .privacy-notice { font-size: 11px; color: var(--text-dim); text-align: center; max-width: 280px; line-height: 1.6; border: 1px solid rgba(139,155,180,0.15); border-radius: 6px; padding: 10px 12px; }
 
   /* PICKER */
@@ -268,7 +266,20 @@
       </div>
     </div>
     <div>
-      <div class="admin-section-title">Puntos guardados</div>
+      <div class="admin-section-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Puntos guardados</span>
+      </div>
+      <div style="margin-bottom:12px">
+        <div class="admin-section-title" style="margin-bottom:8px">Mi progreso</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-sm" onclick="exportProgress()" style="flex:1">⬇ Exportar progreso</button>
+          <button class="btn-sm" onclick="document.getElementById('import-input').click()" style="flex:1">⬆ Importar progreso</button>
+          <input type="file" id="import-input" accept=".json" style="display:none" onchange="importProgress(event)" />
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:8px;line-height:1.5">
+          Exporta para hacer una copia de seguridad o para restaurar tu progreso si cambias de dispositivo.
+        </div>
+      </div>
       <div id="point-list" class="point-list"></div>
     </div>
   </div>
@@ -444,62 +455,16 @@ function initMap() {
 // ── GPS ──
 function startGPS() {
   if (!navigator.geolocation) { document.getElementById('gps-warning').style.display='block'; return; }
-  startOrientation();
   navigator.geolocation.watchPosition(onGPS, ()=>document.getElementById('gps-warning').style.display='block', { enableHighAccuracy:true, maximumAge:3000, timeout:10000 });
 }
-// ── HEADING ──
-let currentHeading = null;
-let smoothedHeading = null;
-const SMOOTH = 0.15; // 0=frozen, 1=instant — 0.15 is smooth but responsive
 
-function startOrientation() {
-  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-    DeviceOrientationEvent.requestPermission().then(state => {
-      if (state === 'granted') window.addEventListener('deviceorientationabsolute', onOrientation, true);
-    }).catch(()=>{});
-  } else {
-    // Try absolute first (more accurate on Android), fall back to relative
-    window.addEventListener('deviceorientationabsolute', onOrientation, true);
-    window.addEventListener('deviceorientation', onOrientation, true);
-  }
-}
-
-function onOrientation(e) {
-  // Skip relative events if we already have absolute ones
-  if (!e.absolute && currentHeading !== null && e.type !== 'deviceorientationabsolute') return;
-
-  let heading = null;
-  if (e.webkitCompassHeading !== undefined && e.webkitCompassHeading !== null) {
-    heading = e.webkitCompassHeading; // iOS — already correct
-  } else if (e.alpha !== null && e.alpha !== undefined) {
-    // Android: alpha is counter-clockwise from arbitrary origin when not absolute
-    // When absolute, 0=North, increases counter-clockwise → convert to clockwise
-    heading = (360 - e.alpha + 360) % 360;
-  }
-  if (heading === null) return;
-
-  // Smooth with exponential moving average, handling 0/360 wrap-around
-  if (smoothedHeading === null) {
-    smoothedHeading = heading;
-  } else {
-    let diff = heading - smoothedHeading;
-    // Handle wrap-around (e.g. going from 350 to 10)
-    if (diff > 180) diff -= 360;
-    if (diff < -180) diff += 360;
-    smoothedHeading = (smoothedHeading + diff * SMOOTH + 360) % 360;
-  }
-
-  currentHeading = smoothedHeading;
-  const arrow = document.getElementById('user-arrow');
-  if (arrow) arrow.style.transform = `rotate(${smoothedHeading}deg)`;
-}
 
 function onGPS(pos) {
   document.getElementById('gps-warning').style.display='none';
   const {latitude:lat,longitude:lng} = pos.coords;
   userPos = {lat,lng};
   if (!userMarker) {
-    const icon = L.divIcon({className:'',html:'<div class="user-arrow-wrap"><svg class="user-arrow" id="user-arrow" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><polygon points="24,4 31,26 24,21 17,26" fill="rgba(79,195,247,0.95)" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg><div class="user-dot"></div></div>',iconSize:[48,48],iconAnchor:[24,24]});
+    const icon = L.divIcon({className:'',html:'<div class="user-dot"></div>',iconSize:[16,16],iconAnchor:[8,8]});
     userMarker = L.marker([lat,lng],{icon,zIndexOffset:1000}).addTo(map);
     map.setView([lat,lng],17);
   } else { userMarker.setLatLng([lat,lng]); }
@@ -886,6 +851,72 @@ function renderAdminList() {
         <button class="btn-delete" onclick="deletePoint('${pt.id}')">✕</button>
       </div>
     </div>`).join('');
+}
+
+// ── EXPORT / IMPORT ──
+async function exportProgress() {
+  // Load full track from Supabase for export
+  const { data: trackData } = await sb.from('tracks').select('lat,lng,created_at').eq('user_id', USER_ID);
+  const { data: discData } = await sb.from('discoveries').select('point_id,discovered_at').eq('user_id', USER_ID);
+
+  const exportObj = {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    user_id: USER_ID,
+    discoveries: discData || [],
+    track: trackData || [],
+    points: state.points
+  };
+
+  const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'scantetuan_progreso_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('✦ Progreso exportado', 'success');
+}
+
+async function importProgress(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!data.version || !data.user_id) { showToast('Archivo no válido', 'error'); return; }
+
+    // Restore discoveries to Supabase under current user_id
+    if (data.discoveries && data.discoveries.length) {
+      const rows = data.discoveries.map(d => ({ user_id: USER_ID, point_id: d.point_id }));
+      await sb.from('discoveries').upsert(rows, { onConflict: 'user_id,point_id' });
+    }
+
+    // Restore track to Supabase
+    if (data.track && data.track.length) {
+      const rows = data.track.map(t => ({ user_id: USER_ID, lat: t.lat, lng: t.lng }));
+      // Insert in batches of 500
+      for (let i = 0; i < rows.length; i += 500) {
+        await sb.from('tracks').insert(rows.slice(i, i + 500));
+      }
+    }
+
+    // Restore points if present
+    if (data.points && data.points.length) {
+      state.points = data.points;
+      saveState();
+      await syncPointsToSupabase();
+    }
+
+    // Reload everything
+    await loadDiscoveriesFromSupabase();
+    await loadTrackFromSupabase();
+    renderAdminList();
+    showToast('✦ Progreso restaurado', 'success');
+  } catch(err) {
+    showToast('Error al importar: ' + err.message, 'error');
+  }
+  e.target.value = '';
 }
 
 // ── UTILS ──
