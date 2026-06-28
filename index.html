@@ -136,6 +136,7 @@
   .btn-delete { background: none; border: none; color: var(--text-dim); font-size: 16px; cursor: pointer; padding: 4px; }
   .empty-hint { text-align: center; padding: 24px; font-size: 13px; color: var(--text-dim); line-height: 1.6; }
   .user-arrow-wrap { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .privacy-notice { font-size: 11px; color: var(--text-dim); text-align: center; max-width: 280px; line-height: 1.6; border: 1px solid rgba(139,155,180,0.15); border-radius: 6px; padding: 10px 12px; }
   .user-dot { width: 14px; height: 14px; background: #4FC3F7; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 8px rgba(79,195,247,0.6); position: absolute; }
   .user-cone { position: absolute; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 16px solid rgba(79,195,247,0.55); bottom: calc(50% + 6px); left: 50%; transform: translateX(-50%); transform-origin: center calc(100% + 7px); transition: transform 0.4s ease; pointer-events: none; }
 
@@ -164,6 +165,7 @@
   <button class="btn-primary" onclick="startExploring()">⊕ Explorar</button>
   <button class="install-btn" id="install-btn" onclick="installApp()">⬇ Instalar app</button>
   <p class="splash-hint">Pasea por Tetuán y deja que la niebla revele sus secretos. Necesitas GPS activo.</p>
+  <p class="privacy-notice">🔒 Esta app no requiere registro. Se genera un ID anónimo único para guardar tu progreso. Si cambias de dispositivo o navegador, perderás tu avance.</p>
 </div>
 
 <!-- MAP -->
@@ -304,14 +306,31 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ── CONFIG ──
 const RENDER_URL = 'https://scantetuan.onrender.com';
 const STORAGE_KEY = 'scantetuan_v2';
 const DISCOVERY_DEFAULT_RADIUS = 50;
+const SUPABASE_URL = 'https://tfdgayqsufgdrejbvdfe.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_wF8XXCeEz10FFFA_Fj35cA_xV1_kJFh';
+
+// ── SUPABASE ──
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ── USER ID (anónimo, persiste en localStorage) ──
+function getUserId() {
+  let uid = localStorage.getItem('scantetuan_uid');
+  if (!uid) {
+    uid = 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem('scantetuan_uid', uid);
+  }
+  return uid;
+}
+const USER_ID = getUserId();
 
 // ── STATE ──
-let state = { points: [], found: {}, visited: [] }; // visited: [{lat,lng}]
+let state = { points: [], found: {} };
 let map, userMarker, userPos = null;
 const markers = {};
 let pickerMap = null, pickerMarker = null, pickerLat = null, pickerLng = null;
@@ -325,6 +344,20 @@ function loadState() {
   try { const r = localStorage.getItem(STORAGE_KEY); if (r) state = {...state,...JSON.parse(r)}; } catch(e) {}
 }
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+async function syncDiscovery(pointId) {
+  await sb.from('discoveries').upsert({ user_id: USER_ID, point_id: pointId }, { onConflict: 'user_id,point_id' });
+}
+
+async function loadDiscoveriesFromSupabase() {
+  const { data } = await sb.from('discoveries').select('point_id').eq('user_id', USER_ID);
+  if (data && data.length) {
+    data.forEach(row => { state.found[row.point_id] = true; });
+    saveState();
+    updateScore();
+    refreshMarkers();
+  }
+}
 loadState();
 
 // ── PWA ──
@@ -358,6 +391,8 @@ function initMap() {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
   startGPS(); refreshMarkers(); updateScore();
   initFogCanvas();
+  loadTrackFromSupabase();
+  loadDiscoveriesFromSupabase();
 }
 
 // ── GPS ──
@@ -421,14 +456,38 @@ function resizeFogCanvas() {
   fogCanvas.height = mapEl.offsetHeight;
 }
 
+// Track buffer — batch uploads to Supabase every 10 points
+let trackBuffer = [];
+let lastTrackedPos = null;
+const TRACK_MIN_DIST = 20; // metres between track points
+const TRACK_BATCH = 10;    // upload every N points
+
+// In-memory visited for fog rendering (loaded from Supabase on start)
+let visitedPoints = [];
+
+async function flushTrackBuffer() {
+  if (!trackBuffer.length) return;
+  const rows = trackBuffer.map(p => ({ user_id: USER_ID, lat: p.lat, lng: p.lng }));
+  trackBuffer = [];
+  await sb.from('tracks').insert(rows);
+}
+
+async function loadTrackFromSupabase() {
+  const { data } = await sb.from('tracks').select('lat,lng').eq('user_id', USER_ID);
+  if (data && data.length) {
+    visitedPoints = data.map(r => ({ lat: r.lat, lng: r.lng }));
+    redrawFog();
+  }
+}
+
 function updateFog(lat, lng) {
-  // Store visited point (subsample: only if far enough from last)
-  const last = state.visited[state.visited.length - 1];
-  if (!last || distanceM(lat, lng, last.lat, last.lng) > 8) {
-    state.visited.push({ lat, lng });
-    // Keep max 2000 points to avoid localStorage bloat
-    if (state.visited.length > 2000) state.visited.shift();
-    saveState();
+  const last = lastTrackedPos;
+  const dist = last ? distanceM(lat, lng, last.lat, last.lng) : Infinity;
+  if (dist >= TRACK_MIN_DIST) {
+    lastTrackedPos = { lat, lng };
+    visitedPoints.push({ lat, lng });
+    trackBuffer.push({ lat, lng });
+    if (trackBuffer.length >= TRACK_BATCH) flushTrackBuffer();
   }
   redrawFog();
 }
@@ -442,12 +501,12 @@ function redrawFog() {
   fogCtx.fillStyle = FOG_COLOR;
   fogCtx.fillRect(0, 0, w, h);
 
-  if (state.visited.length === 0) return;
+  if (visitedPoints.length === 0) return;
 
   // Cut holes using destination-out (erases fog pixels)
   fogCtx.globalCompositeOperation = 'destination-out';
 
-  state.visited.forEach(pt => {
+  visitedPoints.forEach(pt => {
     const pixel = map.latLngToContainerPoint([pt.lat, pt.lng]);
     // Skip points way off screen for performance
     if (pixel.x < -FOG_REVEAL_RADIUS*2 || pixel.x > w + FOG_REVEAL_RADIUS*2 ||
@@ -495,6 +554,7 @@ function checkDiscoveries(lat,lng) {
 }
 function discover(pt) {
   state.found[pt.id] = true; saveState();
+  syncDiscovery(pt.id);
   if (markers[pt.id]) { markers[pt.id].setIcon(makeIcon('marker-found',pt.icon)); markers[pt.id].on('click',()=>openModal(pt)); }
   updateScore();
   showToast('✦ ¡'+pt.name+' descubierto!','success');
@@ -766,6 +826,8 @@ function distanceM(lat1,lng1,lat2,lng2) {
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 document.getElementById('modal-overlay').addEventListener('click',function(e){if(e.target===this)closeModal();});
+window.addEventListener('pagehide', flushTrackBuffer);
+window.addEventListener('beforeunload', flushTrackBuffer);
 </script>
 </body>
 </html>
