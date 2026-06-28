@@ -135,7 +135,9 @@
   .btn-edit { background: none; border: 1px solid var(--gold-dim); color: var(--gold); font-size: 12px; padding: 4px 8px; border-radius: 3px; cursor: pointer; }
   .btn-delete { background: none; border: none; color: var(--text-dim); font-size: 16px; cursor: pointer; padding: 4px; }
   .empty-hint { text-align: center; padding: 24px; font-size: 13px; color: var(--text-dim); line-height: 1.6; }
-  .user-dot { width: 16px; height: 16px; background: #4FC3F7; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 10px rgba(79,195,247,0.5); }
+  .user-arrow-wrap { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .user-dot { width: 14px; height: 14px; background: #4FC3F7; border: 2px solid white; border-radius: 50%; box-shadow: 0 0 8px rgba(79,195,247,0.6); position: absolute; }
+  .user-cone { position: absolute; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 16px solid rgba(79,195,247,0.55); bottom: calc(50% + 6px); left: 50%; transform: translateX(-50%); transform-origin: center calc(100% + 7px); transition: transform 0.4s ease; pointer-events: none; }
 
   /* PICKER */
   .picker-overlay { position: fixed; inset: 0; z-index: 950; display: none; flex-direction: column; background: var(--night); }
@@ -357,8 +359,35 @@ function initMap() {
 // ── GPS ──
 function startGPS() {
   if (!navigator.geolocation) { document.getElementById('gps-warning').style.display='block'; return; }
+  startOrientation();
   navigator.geolocation.watchPosition(onGPS, ()=>document.getElementById('gps-warning').style.display='block', { enableHighAccuracy:true, maximumAge:3000, timeout:10000 });
 }
+// ── HEADING ──
+let currentHeading = null;
+function startOrientation() {
+  // iOS requires explicit permission
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission().then(state => {
+      if (state === 'granted') window.addEventListener('deviceorientationabsolute', onOrientation, true);
+    }).catch(()=>{});
+  } else {
+    window.addEventListener('deviceorientationabsolute', onOrientation, true);
+    window.addEventListener('deviceorientation', onOrientation, true);
+  }
+}
+function onOrientation(e) {
+  let heading = null;
+  if (e.absolute && e.alpha !== null) {
+    heading = 360 - e.alpha; // convert to compass bearing
+  } else if (e.webkitCompassHeading !== undefined) {
+    heading = e.webkitCompassHeading; // iOS
+  }
+  if (heading === null) return;
+  currentHeading = heading;
+  const cone = document.getElementById('user-cone');
+  if (cone) cone.style.transform = `translateX(-50%) rotate(${heading}deg)`;
+}
+
 function onGPS(pos) {
   document.getElementById('gps-warning').style.display='none';
   const {latitude:lat,longitude:lng} = pos.coords;
