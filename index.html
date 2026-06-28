@@ -362,7 +362,7 @@ loadState();
 
 // ── PWA ──
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/scantetuan/sw.js', { scope: '/scantetuan/' }).catch(()=>{});
+  navigator.serviceWorker.register('/scantetuan/sw.js?v=' + Date.now(), { scope: '/scantetuan/' }).catch(()=>{});
 }
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();

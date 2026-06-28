@@ -1,4 +1,4 @@
-const CACHE = 'scantetuan-v2';
+const CACHE = 'scantetuan-' + '1782648398';
 const BASE = '/scantetuan';
 const ASSETS = [
   BASE + '/',
@@ -22,7 +22,7 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  if (e.request.url.includes('/upload-foto') || e.request.url.includes('openstreetmap')) {
+  if (e.request.url.includes('/upload-foto') || e.request.url.includes('openstreetmap') || e.request.url.includes('supabase')) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
   } else {
     e.respondWith(
