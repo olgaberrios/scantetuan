@@ -48,7 +48,7 @@ html, body { height: 100%; background: var(--night); color: var(--text); font-fa
 /* ── MAP ── */
 #map-screen { background: var(--night); }
 #map { flex: 1; position: relative; z-index: 1; }
-.leaflet-tile { filter: brightness(0.35) saturate(0.6) hue-rotate(180deg); }
+.leaflet-tile { filter: brightness(0.55) saturate(0.5) hue-rotate(185deg); }
 .fog-canvas { position: absolute; inset: 0; pointer-events: none; z-index: 610; }
 .hud-top { position: absolute; top: 0; left: 0; right: 0; z-index: 650; padding: 12px 16px; display: flex; align-items: center; gap: 10px; background: linear-gradient(to bottom, rgba(13,15,26,0.95) 0%, transparent 100%); }
 .hud-compass { width: 34px; height: 34px; border: 1px solid var(--gold-dim); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'Cinzel', serif; font-size: 10px; color: var(--gold); flex-shrink: 0; }
@@ -545,7 +545,7 @@ function redrawFog() {
   if (!fogCtx||!fogCanvas) return;
   const w=fogCanvas.width, h=fogCanvas.height;
   fogCtx.clearRect(0,0,w,h);
-  fogCtx.fillStyle='rgba(13,15,26,0.72)';
+  fogCtx.fillStyle='rgba(13,15,26,0.58)';
   fogCtx.fillRect(0,0,w,h);
   if (!visitedPoints.length) return;
   fogCtx.globalCompositeOperation='destination-out';
